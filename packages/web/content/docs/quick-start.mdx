@@ -1,0 +1,67 @@
+---
+title: Quick start
+description: Thirty seconds to your first score.
+---
+
+## 1. Install
+
+```bash
+npm i -g hillz
+```
+
+`hillz` ships as a standalone Bun-compiled binary per platform; npm picks the right one for you (linux-x64, linux-arm64, darwin-x64, darwin-arm64, or windows-x64). Node 18+ is the only host-runtime requirement — Bun is **not** required on your machine.
+
+## 2. Drop a skill in your repo
+
+The agentskills.io format is a folder with a `SKILL.md` at its root:
+
+```markdown
+---
+name: greeter
+description: Greets a user by name, preserving honorifics.
+---
+
+You are a polite greeter. When given a name, respond with a single
+sentence greeting. Preserve titles (Dr., Prof., etc.) verbatim.
+```
+
+Put it at `./skills/greeter/SKILL.md`. Hillz will discover it.
+
+## 3. Write an eval
+
+```ts
+// evals/greeter.eval.ts
+import { defineEval, score } from '@hillz/core'
+
+export default defineEval({
+  name: 'greeter/by-name',
+  skill: './skills/greeter',
+  cases: [
+    { input: { name: 'Ada' }, expect: { contains: 'Ada' } },
+    { input: { name: 'Dr. Lovelace' }, expect: { contains: 'Dr.' } },
+  ],
+  scorer: score.containsExpected(),
+})
+```
+
+## 4. Run
+
+```bash
+hillz run
+```
+
+You'll see per-case results and an aggregate score per model.
+
+## 5. Climb
+
+```bash
+hillz suggest --budget 50
+```
+
+Hillz reflects on failure traces, proposes edits to the skill, accepts changes that improve the metric, and keeps a Pareto frontier of cost-versus-score candidates.
+
+## Where to next
+
+- [Concepts → Evals & tasks](/docs/concepts/evals-and-tasks) — what an eval is, exactly.
+- [Concepts → GEPA](/docs/concepts/gepa) — how the climb works under the hood.
+- [CLI → `hillz suggest`](/docs/cli/suggest) — flags and budgets.

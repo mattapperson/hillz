@@ -1,0 +1,10 @@
+{
+  "name": "starter-project",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@hillz/agent": "workspace:*",
+    "@hillz/cli": "workspace:*",
+    "@hillz/core": "workspace:*"
+  }
+}

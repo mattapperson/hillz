@@ -1,0 +1,33 @@
+---
+title: hillz coverage
+description: Show which capabilities your eval set exercises.
+---
+
+```bash
+hillz coverage [flags]
+```
+
+Cross-references discovered evals against discovered skills. Reports which skill behaviors are touched by at least one eval, and which are not.
+
+## What it counts
+
+- **Skill coverage**: every `SKILL.md` should be referenced by at least one eval.
+- **Tag coverage**: every tag declared in `defineEval({ tags })` should appear on at least N evals (default 1).
+- **Input variant coverage**: input shapes seen by the evals vs the input shape the skill declares it accepts.
+
+## Flags
+
+| Flag              | Default | Description                                                  |
+| ----------------- | ------- | ------------------------------------------------------------ |
+| `--threshold <n>` | `0.8`   | Fail (exit 1) if overall coverage drops below this fraction. |
+| `--format <name>` | `table` | `table`, `json`, or `markdown`.                              |
+| `--by <axis>`     | `skill` | Group by `skill`, `tag`, or `model`.                         |
+
+## Example output
+
+```
+SKILL                COVERED   EVALS   TAGS
+greeter              ✓         3       greeter, honorific
+formatter            ✓         2       formatter
+classifier           ✗         0       —
+```

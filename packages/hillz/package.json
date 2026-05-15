@@ -1,0 +1,28 @@
+{
+  "name": "hillz",
+  "version": "1.0.2",
+  "description": "Eval and auto-improve agent skills via hill climbing. Standalone Bun-compiled CLI distributed via per-platform npm packages.",
+  "license": "MIT",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mattapperson/hillz.git"
+  },
+  "homepage": "https://hillz.dev",
+  "bin": {
+    "hillz": "bin/hillz.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "hillz-linux-x64": "1.0.2",
+    "hillz-linux-arm64": "1.0.2",
+    "hillz-darwin-x64": "1.0.2",
+    "hillz-darwin-arm64": "1.0.2",
+    "hillz-windows-x64": "1.0.2"
+  }
+}

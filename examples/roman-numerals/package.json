@@ -1,0 +1,11 @@
+{
+  "name": "roman-numerals-example",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@hillz/agent": "workspace:*",
+    "@hillz/cli": "workspace:*",
+    "@hillz/core": "workspace:*",
+    "@hillz/scorers": "workspace:*"
+  }
+}

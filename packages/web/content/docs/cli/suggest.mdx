@@ -1,0 +1,52 @@
+---
+title: hillz suggest
+description: Use an LLM to draft an eval module for a SKILL.md, optionally scoped by a prompt.
+---
+
+```bash
+hillz suggest <skillFile> [prompt] [flags]
+```
+
+Loads the given `SKILL.md`, asks the configured judge to propose a `defineEval(...)` TypeScript module with tasks and validators, and prints or writes the result. When a freeform `[prompt]` is supplied, the judge uses it to scope which tasks the eval covers and which validators (`expect.contains`, `expect.toolCalls`, per-task scorers) to attach. Without a prompt, the judge picks 3–5 tasks that broadly exercise the skill.
+
+Default behavior is a dry-run: the rendered module is written to stdout. Pass `--apply` to write it to `evals/<skill-name>.eval.ts`.
+
+## Flags
+
+| Flag             | Default     | Description                                                              |
+| ---------------- | ----------- | ------------------------------------------------------------------------ |
+| `--apply`        | `false`     | Write the rendered module to `evals/<skill-name>.eval.ts`.                |
+| `--force`        | `false`     | Overwrite an existing eval file. Required if the target already exists.   |
+| `--model <id>`   | from config | Judge model override. Falls back to the project's configured judge.       |
+
+## Examples
+
+```bash
+# Dry-run: print the proposed eval module to stdout
+hillz suggest ./skills/greeter/SKILL.md
+
+# Scoped by a prompt — the judge uses it to pick tasks and infer validators
+hillz suggest ./skills/greeter/SKILL.md \
+  "test that the greeter responds with 'hello' and 'goodbye' on the matching inputs"
+
+# Write into ./evals/greeter.eval.ts
+hillz suggest ./skills/greeter/SKILL.md "polite greetings only" --apply
+
+# Overwrite an existing eval file
+hillz suggest ./skills/greeter/SKILL.md "polite greetings only" --apply --force
+
+# Pick a stronger drafting model
+hillz suggest ./skills/greeter/SKILL.md --model anthropic/claude-3.5-sonnet
+```
+
+## What gets written
+
+- **Without `--apply`**: the rendered TypeScript module is printed to stdout. Nothing is written to disk.
+- **With `--apply`**: the module is written to `<projectRoot>/evals/<skill.name>.eval.ts`. The command exits non-zero if the file already exists and `--force` was not passed.
+
+The generated module uses `defineEval` from `@hillz/core` and the `react` flow combinator from `@hillz/agent`, wires `skill.body` as the instructions, and starts with `content-similarity` as a default eval-level scorer. Per-task scorers, when emitted, come from the built-in allowlist (`keyword-coverage`, `tool-call-accuracy`, `trajectory-accuracy`, `max-tool-calls`, `required-tools`, `forbidden-tools`, `action-sequence`). Treat the output as a starting point — review the tasks and tighten the scorers before relying on it.
+
+## Exit codes
+
+- `0` — module rendered (and written, if `--apply`).
+- `1` — target file exists and `--force` was not passed.

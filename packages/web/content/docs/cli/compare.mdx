@@ -1,0 +1,44 @@
+---
+title: hillz compare
+description: Diff results across runs, models, or harnesses.
+---
+
+```bash
+hillz compare <a> <b> [flags]
+```
+
+Compares two runs (by run ID, model, or commit SHA) and prints per-case deltas. Useful for spotting regressions and seeing which evals the climb actually moved.
+
+## Forms
+
+```bash
+# two run IDs
+hillz compare run_abc run_xyz
+
+# a model against itself across runs
+hillz compare --model openai/gpt-4o run_abc run_xyz
+
+# two models within the same run
+hillz compare --within run_xyz anthropic/claude-3.5-sonnet openai/gpt-4o
+
+# climb start vs end
+hillz compare run_xyz --trajectory first last
+```
+
+## Flags
+
+| Flag                  | Default   | Description                                                   |
+| --------------------- | --------- | ------------------------------------------------------------- |
+| `--threshold <delta>` | `0.02`    | Show only cases whose score changed by more than this.        |
+| `--format <name>`     | `table`   | `table`, `json`, or `markdown`.                               |
+| `--sort <key>`        | `delta`   | `delta`, `name`, `cost`.                                      |
+| `--pareto`            | `false`   | Print the Pareto frontier diff instead of per-case deltas.    |
+
+## Example
+
+```
+EVAL                       MODEL                            BEFORE   AFTER   Δ
+greeter/by-name            anthropic/claude-3.5-sonnet      0.71     0.84    +0.13
+greeter/handles-honorific  anthropic/claude-3.5-sonnet      0.42     0.61    +0.19
+formatter/json-output      openai/gpt-4o                    0.91     0.88    −0.03
+```

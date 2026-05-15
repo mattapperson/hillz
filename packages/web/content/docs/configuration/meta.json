@@ -1,0 +1,4 @@
+{
+  "title": "Configuration",
+  "pages": ["index", "skill-md", "hillz-config", "eval-ts", "scorer-ts"]
+}

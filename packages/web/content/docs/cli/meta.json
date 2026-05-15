@@ -1,0 +1,4 @@
+{
+  "title": "CLI",
+  "pages": ["run", "suggest", "enhance", "coverage", "compare", "grade"]
+}

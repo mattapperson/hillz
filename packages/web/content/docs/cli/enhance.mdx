@@ -1,0 +1,108 @@
+---
+title: hillz enhance
+description: GEPA-optimize a skill — body, description, references, scripts, assets — against its eval to raise scores.
+---
+
+```bash
+hillz enhance [pattern] [flags]
+```
+
+Runs a GEPA-style (Genetic-Pareto with LLM reflection) optimizer against a skill's eval suite. Each iteration samples a minibatch of tasks, runs the current candidate, asks the judge to reflect on `{input, output, scores}` tuples, proposes a new value for the chosen component, and accepts the child iff its minibatch sum beats the parent. Accepted children are re-scored on the full task set and added to a Pareto frontier.
+
+By default the optimizer rotates between two components: the SKILL.md `body` and its frontmatter `description`. Per the [Agent Skills spec](https://agentskills.io/specification), a skill is a *directory* — `SKILL.md` plus optional `references/`, `scripts/`, and `assets/` siblings. `--full` (or `--components ...`) lets the optimizer mutate those siblings too, one file per iteration.
+
+Default behavior is a dry-run: a unified diff and before/after scores are printed; nothing on disk is modified unless `--write` is passed AND an improvement was found.
+
+## Flags
+
+| Flag                      | Default       | Description                                                                                              |
+| ------------------------- | ------------- | -------------------------------------------------------------------------------------------------------- |
+| `--max-metric-calls <n>`  | `30`          | Budget cap on per-task eval invocations (baseline + minibatch + full eval all count).                     |
+| `--minibatch <n>`         | `4`           | Tasks sampled per iteration. Clamped to the eval's total task count.                                       |
+| `--components <list>`     | `body,desc`   | Comma-separated subset to mutate. Tokens: `body`, `desc` (alias `description`), `refs` (alias `references`), `scripts`, `assets`, `both` (=`body,desc`), `full` (everything). |
+| `--full`                  | `false`       | Shorthand for `--components full`. Mutually exclusive with `--components`.                               |
+| `--model <id>`            | from env      | Reflection model. Falls back to `HILLZ_JUDGE_MODEL`, then `openai/gpt-5-nano`.                            |
+| `--write`                 | `false`       | Apply the best candidate atomically (temp-and-rename per file; preserves untouched frontmatter and files). |
+| `--json`                  | `false`       | Emit a machine-readable summary on stdout instead of the human-readable diff.                              |
+| `--seed <n>`              | random        | Seed for deterministic minibatch sampling. Reflection results still depend on the LLM.                    |
+
+If `[pattern]` is omitted, every discovered skill is enhanced in turn. Patterns support `*` glob wildcards (e.g. `greeter`, `greet*`).
+
+## Components
+
+Group tokens map to files under the skill directory:
+
+| Token        | Expands to                                                                          |
+| ------------ | ----------------------------------------------------------------------------------- |
+| `body`       | The Markdown body of `SKILL.md`.                                                    |
+| `desc`       | The `description` field in the SKILL.md frontmatter.                                 |
+| `refs`       | Every text file under `references/`, walked recursively.                             |
+| `scripts`    | Every script under `scripts/` (e.g. `.sh`, `.py`, `.js`, `.ts`, `.rb`).               |
+| `assets`     | Every text file under `assets/` (markdown, JSON, YAML, TOML, plain text — binaries are skipped with a warning). |
+| `both`       | `body, desc` (legacy alias).                                                         |
+| `full`       | `body, desc, refs, scripts, assets`.                                                 |
+
+Within each iteration the optimizer round-robins across the **expanded** list. With `--components refs` and three reference files, four iterations cycle through all three files plus one extra round; the reflection prompt is tailored per file (`markdown`/`data`/`script` get different rubrics).
+
+If the expanded list is empty (e.g. `--components scripts` on a skill with no `scripts/` directory) the command fails fast.
+
+## Examples
+
+```bash
+# Dry-run against a single skill — see the proposed diff and score delta
+hillz enhance greeter
+
+# Apply the best candidate if it improves on baseline (body + description only)
+hillz enhance greeter --write
+
+# Optimize only the description (drives skill selection in agentic contexts)
+hillz enhance greeter --components desc --max-metric-calls 60
+
+# Mutate reference docs alongside the body
+hillz enhance greeter --components body,refs --max-metric-calls 60
+
+# Climb every component of every skill in one pass
+hillz enhance --full --max-metric-calls 120 --write
+
+# Reproducible runs
+hillz enhance greeter --seed 42
+
+# Larger budget, body only, custom reflection model
+hillz enhance greeter --components body --max-metric-calls 100 \
+  --model anthropic/claude-3.5-sonnet
+```
+
+## What gets written
+
+- Each candidate evaluation is persisted under `./hillz/results/<runId>/` like a normal `hillz run` (one directory per evaluation, scorer outputs included).
+- When `--write` is passed AND the best candidate's mean score exceeds the baseline:
+  - `SKILL.md` is rewritten atomically iff `body` or `description` differ from baseline. Other frontmatter keys (e.g. `version`) are preserved.
+  - Each sibling file whose content differs from the loaded baseline is rewritten atomically in place.
+  - Files that didn't change in the best candidate are left untouched.
+
+## How acceptance works
+
+Each iteration:
+
+1. **Pick a parent** from the Pareto frontier, frequency-weighted by per-task fronts (candidates that lead on more tasks are more likely to be sampled).
+2. **Pick a component** to mutate — round-robin across the expanded component list (per-file when groups are used).
+3. **Sample a minibatch** of task IDs deterministically (seeded).
+4. **Run parent on minibatch**, capture `{input, output, per-scorer scores + reasons}`.
+5. **Reflect** via `judge.evaluate` with a per-component rubric (markdown vs. script vs. description get different prompts). The judge proposes a full replacement for that component.
+6. **Run child on the same minibatch.** Accept iff `sum(child) > sum(parent) + threshold` (threshold defaults to 0).
+7. **On accept**, run child on the full task set and add to the Pareto front.
+8. **Early-stop** after `5` consecutive rejections or when the metric-call budget is reached.
+
+## Caveats
+
+- A skill must have an associated eval (matched by `eval.skill === skill.name`). Run `hillz suggest <SKILL.md>` first if none exists.
+- The optimizer forces `refreshCache: true` on every candidate eval. The existing cache key does not include the skill body or sibling files, so reusing cached parent traces would silently mask child performance.
+- Reflection failures (LLM errors, non-JSON output) do **not** count toward stagnation — they are surfaced in the event log with the underlying reason.
+- A skill with only one task will still run, but the minibatch and full-eval task sets are identical, so each iteration costs 3 metric calls instead of 2.
+- **Sibling-file impact on scoring**: hillz exposes references/scripts/assets via `skill.siblings` to your eval's flow factory. If your flow doesn't surface those files to the agent (in-prompt or via a read-file tool), mutating them produces no scoring signal. Smoke-test by inspecting the optimizer's per-iteration diff.
+- Binary files under any sibling directory are skipped at load time with a warning (`! skipped <path> (binary)`); they are never mutated or written.
+
+## Exit codes
+
+- `0` — completed; whether files were rewritten depends on `--write` and whether an improvement was found.
+- `1` — no skills matched the pattern, `--full` combined with `--components`, an unknown `--components` token, or an unrecoverable error before the loop started.

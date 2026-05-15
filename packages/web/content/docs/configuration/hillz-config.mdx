@@ -1,0 +1,106 @@
+---
+title: hillz.config.ts
+description: Optional project-wide config — cache store, results directory, and a custom judge.
+---
+
+`hillz.config.ts` is **optional**. If absent, hillz uses defaults: a file-backed cache under `./hillz/cache/`, a results directory at `./hillz/results/`, and a judge built from `@hillz/agent`'s `createJudge()`.
+
+When present, it lives at the project root and exports a `HillzConfig` object.
+
+## Discovery
+
+| Path                          | Recognised exports |
+| ----------------------------- | ------------------ |
+| `<root>/hillz.config.ts`      | `default`, `config` |
+
+Loaded by `packages/cli/src/loader.ts:52-59` — the import is wrapped in a `try`/`catch`, so an absent file (or one that throws on import) silently falls back to defaults.
+
+## Schema
+
+The full `HillzConfig` interface, from `packages/core/src/types.ts`:
+
+```ts
+interface HillzConfig {
+  cache?: CacheStore
+  resultsDir?: string
+  judge?: Judge
+}
+```
+
+Every field is optional. Unrecognised fields are tolerated but ignored.
+
+| Field        | Type          | Default                                 | Purpose                                                                |
+| ------------ | ------------- | --------------------------------------- | ---------------------------------------------------------------------- |
+| `cache`      | `CacheStore`  | `createFileCache('./hillz/cache')`      | Where agent traces are memoised. Bypass by providing a no-op store.    |
+| `resultsDir` | `string`      | `./hillz/results`                       | Where per-run task results and workspace archives are persisted.       |
+| `judge`      | `Judge`       | `createJudge()` (from `@hillz/agent`)   | The LLM judge used for `llm`-kind scorers and the `enhance` reflector. |
+
+### `CacheStore`
+
+```ts
+interface CacheStore {
+  get: (key: string) => Promise<AgentTrace | null>
+  set: (key: string, trace: AgentTrace) => Promise<void>
+  has: (key: string) => Promise<boolean>
+  prune: (opts?: { olderThanDays?: number }) => Promise<{ removed: number }>
+  clear: () => Promise<void>
+  stats: () => Promise<{ entries: number; bytes: number }>
+}
+```
+
+`@hillz/cache` ships three implementations:
+
+- `createMemoryCache()` — in-process map; no persistence.
+- `createFileCache(dir)` — one JSON file per key under `dir`. Hillz's default.
+- `createSqliteCache(file)` — single-file SQLite store; better for high-concurrency runs.
+
+The cache key is `SHA-256(flowVersion, canonicalized input)` — or whatever your eval's `cacheKey(input)` returns. See [`*.eval.ts`](./eval-ts#caching).
+
+### `Judge`
+
+```ts
+interface Judge {
+  evaluate: <T extends z.ZodTypeAny>(req: {
+    model?: string
+    rubric: string
+    input: string
+    schema: T
+  }) => Promise<z.infer<T>>
+}
+```
+
+Override the judge when you need a specific model, vendor, or rate-limit policy. The default (`createJudge()`) reads `HILLZ_JUDGE_MODEL` and falls back to `openai/gpt-5-nano`.
+
+## Identity helper
+
+```ts
+import { defineConfig } from '@hillz/core'
+```
+
+`defineConfig` is `<T extends HillzConfig>(c: T): T => c` — no transformation, just a typed pass-through.
+
+## Example
+
+```ts
+// hillz.config.ts
+import { defineConfig } from '@hillz/core'
+import { createJudge } from '@hillz/agent'
+import { createSqliteCache } from '@hillz/cache'
+
+export default defineConfig({
+  cache: createSqliteCache('./hillz/cache.sqlite'),
+  resultsDir: './ci-artifacts/hillz',
+  judge: createJudge({ model: 'anthropic/claude-3.5-sonnet' }),
+})
+```
+
+## Minimal example
+
+```ts
+// hillz.config.ts
+import { defineConfig } from '@hillz/core'
+
+export default defineConfig({})
+```
+
+…which is equivalent to having no `hillz.config.ts` at all. Add fields as needed; everything else stays defaulted.

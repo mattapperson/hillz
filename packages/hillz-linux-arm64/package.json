@@ -1,0 +1,19 @@
+{
+  "name": "hillz-linux-arm64",
+  "version": "1.0.2",
+  "description": "linux-arm64 binary for the hillz CLI. Installed automatically as an optional dependency of `hillz`.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mattapperson/hillz.git"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "bin/hillz"
+  ]
+}

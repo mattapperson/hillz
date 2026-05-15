@@ -1,0 +1,36 @@
+---
+title: Introduction
+description: Eval and auto-improve agent skills via hill climbing.
+---
+
+Hillz is an evaluation harness for [agentskills.io](https://agentskills.io)-compatible skills. Evals and tasks are authored as TypeScript modules — full type safety, autocomplete, reusable factories — and auto-discovered from a project directory. The CLI is a small set of verbs (`run`, `suggest`, `enhance`, `coverage`, `compare`, `grade`) — one per phase, no DSL.
+
+## Why this exists
+
+Most agent eval harnesses either:
+
+- ship as opinionated YAML test runners that resist being extended in code, or
+- ship as research scripts that don't survive a real project.
+
+Hillz starts from a different premise: **your evals are TypeScript**. Refactor an input shape and the compiler tells you which cases need updating. Share scorers as functions. Compose skills as imports. The harness measures; your code does the rest.
+
+## The hill-climb
+
+Hillz's headline feature is a **reflective hill-climb** that auto-improves how a skill is used across models and harnesses. It draws from two ideas:
+
+- **[GEPA](/docs/concepts/gepa)** ([arXiv:2507.19457](https://arxiv.org/abs/2507.19457)) — Genetic-Pareto reflective prompt evolution. Reflect on execution traces in natural language; keep a Pareto frontier of candidates instead of a single best.
+- **[karpathy/autoresearch](/docs/concepts/autoresearch)** — a minimal accept/reject loop on a fixed budget. One file edited per iteration. Keep what improves the metric.
+
+Combined: a small, type-safe, reproducible climb that takes a working skill and makes it better — without you tuning prompts by hand.
+
+## Who Hillz is for
+
+- Teams shipping agents across multiple models who need to know **what regresses**.
+- Skill authors who want to **iterate quickly** on `SKILL.md` content with measurable feedback.
+- Anyone tired of YAML eval files and wants the same ergonomics they'd expect from a unit-test framework.
+
+## What's next
+
+- [Quick start](/docs/quick-start) — install the CLI, write a 10-line eval, run it.
+- [Concepts → Skills](/docs/concepts/skills) — the agentskills.io format and how Hillz discovers them.
+- [Concepts → GEPA](/docs/concepts/gepa) — the reflective evolution loop.

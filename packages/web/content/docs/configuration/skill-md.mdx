@@ -1,0 +1,158 @@
+---
+title: Skill files (SKILL.md)
+description: Full schema for skills/<name>/SKILL.md and the optional sibling directories hillz loads alongside it.
+---
+
+A **skill** is a directory containing a `SKILL.md` file. Hillz follows the [agentskills.io specification](https://agentskills.io/specification): the directory may also contain `references/`, `scripts/`, and `assets/` siblings which hillz loads recursively and surfaces to the optimizer.
+
+For the conceptual overview, see [Concepts → Skills](../concepts/skills).
+
+## Discovery
+
+| Glob                  | Default root | Recognised exports |
+| --------------------- | ------------ | ------------------ |
+| `skills/**/SKILL.md`  | project cwd  | (parsed file)      |
+
+Implemented in `packages/core/src/skill-loader.ts`; called from `packages/core/src/discover.ts` via `discoverSkills(cwd)`. Discovery is purely filesystem — no module evaluation.
+
+## Directory layout
+
+```
+skills/<name>/
+├── SKILL.md          # required
+├── references/       # optional — markdown / data docs the agent loads on demand
+├── scripts/          # optional — executable helpers (.sh, .py, .js, .ts, .rb, ...)
+└── assets/           # optional — templates, schemas, plain-text data
+```
+
+## SKILL.md format
+
+YAML frontmatter followed by Markdown body:
+
+```markdown
+---
+name: greeter
+description: Greets a user by name, preserving honorifics.
+version: '1'
+---
+You are a polite greeter. When given a name, respond with a single
+sentence greeting. Preserve titles (Dr., Prof., etc.) verbatim.
+```
+
+### Frontmatter
+
+Hillz validates two required fields and one optional field. Any additional keys from the agentskills.io spec (`license`, `compatibility`, `metadata`, `allowed-tools`, etc.) are preserved on disk but **not** consumed by hillz — they pass through unread.
+
+| Field         | Required | Type     | Hillz behaviour                                                                                |
+| ------------- | -------- | -------- | ---------------------------------------------------------------------------------------------- |
+| `name`        | yes      | `string` | Becomes `Skill.name`. The CLI uses this to match evals (`eval.skill === skill.name`).           |
+| `description` | yes      | `string` | Becomes `Skill.description`. The optimizer treats it as a mutable component.                    |
+| `version`     | no       | `string` | Becomes `Skill.version` if present.                                                             |
+| _other keys_  | —        | —        | Passed through on round-trip writes (e.g. `hillz enhance --write`); never read by hillz itself. |
+
+The body — everything after the closing `---` — becomes `Skill.body` (whitespace-trimmed).
+
+### Loaded shape
+
+The `Skill` interface, exported from `@hillz/core` (`packages/core/src/types.ts`):
+
+```ts
+interface Skill {
+  name: string
+  description: string
+  version?: string
+  body: string
+  filePath: string
+  siblings?: SkillSiblings
+  loadWarnings?: SkillLoadWarning[]
+}
+```
+
+## Sibling directories
+
+Hillz walks `references/`, `scripts/`, and `assets/` recursively. Each file becomes a `SkillFile`:
+
+```ts
+interface SkillFile {
+  path: string          // relative to the skill root, e.g. 'references/REFERENCE.md'
+  absolutePath: string
+  content: string       // UTF-8 text
+  kind: SkillFileKind
+  group: SkillFileGroup
+}
+```
+
+### File classification
+
+`SkillFileKind` is inferred from the parent directory and the file's extension:
+
+| Group        | Extensions                                     | Resulting `kind`        |
+| ------------ | ---------------------------------------------- | ----------------------- |
+| `references` | `.md`, `.markdown`, `.mdx`, `.txt`             | `markdown`              |
+| `references` | any other text extension                       | `data`                  |
+| `scripts`    | any                                            | `script`                |
+| `assets`     | `.md`, `.markdown`, `.mdx`, `.txt`             | `markdown`              |
+| `assets`     | `.json`, `.yaml`, `.yml`, `.toml`, `.csv`, `.tsv`, `.xml` | `data`        |
+| `assets`     | anything else (text)                           | `asset`                 |
+
+Classification lives in `packages/core/src/skill-loader.ts`.
+
+### Skipped files
+
+Hillz reads each candidate file and inspects it before keeping it:
+
+- **Binary** — null byte in the first 8 KB → skipped.
+- **Oversized** — larger than 256 KB → skipped.
+- **Unreadable** — stat / read error → skipped.
+
+Every skip is recorded as a `SkillLoadWarning`:
+
+```ts
+interface SkillLoadWarning {
+  path: string
+  reason: 'binary' | 'unreadable' | 'oversize'
+  detail?: string
+}
+```
+
+The CLI surfaces these warnings during `hillz enhance` (and elsewhere) as `! skipped <path> (<reason>)`.
+
+## Minimal example
+
+```
+skills/echo/
+└── SKILL.md
+```
+
+```markdown
+---
+name: echo
+description: Echo the user's input verbatim.
+---
+Respond with exactly the message the user sent, with no additions.
+```
+
+## Full example with siblings
+
+```
+skills/roman-numerals/
+├── SKILL.md
+├── references/
+│   └── CONVERSION.md
+└── scripts/
+    └── check.sh
+```
+
+```markdown
+---
+name: roman-numerals
+description: Convert a positive integer (1–3999) into its standard Roman-numeral form.
+version: '1'
+---
+You are a concise Roman numeral converter. Respond with ONLY the numeral
+in uppercase. If the input is out of range, respond with: OUT OF RANGE
+
+For the substitution rules, see [references/CONVERSION.md](references/CONVERSION.md).
+```
+
+See [`hillz enhance`](../cli/enhance) for how the optimizer mutates a skill and its siblings.

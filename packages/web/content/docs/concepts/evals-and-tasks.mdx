@@ -1,0 +1,71 @@
+---
+title: Evals and tasks
+description: What an eval is in Hillz — and how it relates to a task.
+---
+
+## Vocabulary
+
+- A **task** is a single input/expected-output pair. The atom.
+- An **eval** is a named collection of tasks that exercises one skill or behavior.
+- A **scorer** turns a task's actual output into a numeric score in `[0, 1]`.
+- A **run** is the result of executing a set of evals against one or more models.
+
+## Anatomy of an eval
+
+```ts
+import { defineEval, score } from '@hillz/core'
+
+export default defineEval({
+  name: 'greeter/handles-honorific',
+  skill: './skills/greeter',
+
+  cases: [
+    {
+      input: { name: 'Dr. Ada Lovelace' },
+      expect: { contains: 'Dr.' },
+      weight: 1,
+    },
+  ],
+
+  scorer: score.containsExpected(),
+
+  tags: ['greeter', 'honorific'],
+})
+```
+
+`defineEval` is **typed against the skill's input contract**. Refactor the skill's input shape and the compiler flags every eval whose cases no longer match.
+
+## The scorer contract
+
+A scorer is a function:
+
+```ts
+type Scorer<I, O> = (run: {
+  input: I
+  output: O
+  expect?: Partial<O>
+}) => number | Promise<number>
+```
+
+Built-in scorers are ported from [Mastra](https://mastra.ai) under Apache 2.0. They cover the common cases:
+
+- `score.containsExpected()` — exact / substring / regex match
+- `score.semanticSimilarity({ threshold })` — embedding similarity
+- `score.toolUseExpected({ expected })` — verifies tool call shapes
+- `score.weighted({ ... })` — composes multiple scorers
+
+You can also write your own — a scorer is just a function.
+
+## Auto-discovery rules
+
+Hillz looks for files matching `**/*.eval.ts` under `evalsDir`. Each must `export default` a `defineEval()` call.
+
+```ts
+// hillz.config.ts
+import { defineConfig } from '@hillz/core'
+
+export default defineConfig({
+  evalsDir: './evals',
+  pattern: '**/*.eval.ts', // override if needed
+})
+```

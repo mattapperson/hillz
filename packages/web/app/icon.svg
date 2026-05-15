@@ -1,0 +1,18 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 32 32"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="1.6"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <rect width="32" height="32" fill="#18181b" stroke="none" />
+  <g stroke="#fafafa">
+    <ellipse cx="22" cy="20" rx="3.5" ry="2.5" />
+    <ellipse cx="22" cy="20" rx="6.5" ry="4.5" />
+    <ellipse cx="22" cy="20" rx="9.5" ry="6.5" />
+    <path d="M3 26 L10 22 L15 19 L21 15 L26 11" />
+    <circle cx="26" cy="11" r="1.4" fill="#fafafa" stroke="none" />
+  </g>
+</svg>

@@ -1,0 +1,53 @@
+---
+title: Autoresearch
+description: A minimal, fixed-budget accept/reject loop for skill improvement.
+---
+
+Hillz's hill-climb is **structured after [karpathy/autoresearch](https://github.com/karpathy/autoresearch)** — Andrej Karpathy's minimal autonomous research agent. The shape transfers cleanly from model training to skill improvement.
+
+## The shape
+
+> Per iteration: edit **one file**, run for a **fixed time budget**, evaluate on a **single metric**, **keep** the change if the metric improved, **discard** otherwise.
+
+In autoresearch the file is `train.py`, the budget is 5 minutes, the metric is `val_bpb`. In Hillz the file is your `SKILL.md` (or any chosen surface), the budget is a per-step seconds limit, and the metric is your eval set's aggregate score.
+
+## Why fixed budgets
+
+Two reasons:
+
+1. **Iterations are comparable.** A 5-minute candidate against a 5-minute candidate is honest. Without a fixed budget, an optimizer can drift into "longer runs win" — which isn't improvement.
+2. **Throughput is predictable.** ~12 iterations per hour, ~100 overnight. You know what a run costs before you start it.
+
+## How Hillz combines the two
+
+GEPA decides *what to change* and *what to keep*. Autoresearch decides *how much time each step gets* and *that we only accept on metric improvement*.
+
+```ts
+import { climb } from '@hillz/core/suggest'
+
+await climb({
+  target: './skills/greeter/SKILL.md',
+
+  // autoresearch-style budget
+  budget: {
+    iterations: 50,
+    perStepSeconds: 300,
+  },
+
+  // GEPA-style reflection drives the proposal
+  propose: 'gepa',
+
+  // accept rule
+  accept: (next, current) => next.score > current.score,
+})
+```
+
+## Accept rules that aren't just "score went up"
+
+The `accept` callback gets the full candidate, so you can encode:
+
+- Pareto: accept if non-dominated on `(cost, score)`.
+- Tolerated regression: accept if score within `ε` and cost dropped meaningfully.
+- Capability-preserving: accept only if no eval tagged `must-pass` regressed.
+
+The default is pure score improvement. Override when you know more.

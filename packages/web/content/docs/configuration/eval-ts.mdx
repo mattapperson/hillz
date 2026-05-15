@@ -1,0 +1,194 @@
+---
+title: Eval modules (*.eval.ts)
+description: Full schema for the TypeScript modules that define hillz evals — Eval, Task, ScorerRef, and the flow under test.
+---
+
+An **eval module** is a TypeScript file matching `evals/**/*.eval.ts` that exports one or more `Eval` objects. The CLI auto-discovers it, runs each task against the eval's `flow`, scores the output, and persists a `RunResult`.
+
+For the conceptual overview, see [Concepts → Evals and tasks](../concepts/evals-and-tasks).
+
+## Discovery
+
+| Glob                       | Recognised exports                     |
+| -------------------------- | -------------------------------------- |
+| `evals/**/*.eval.ts`       | `default`, `evalDef`, `evals` (array)  |
+
+Discovery is implemented in `packages/core/src/discover.ts` (`discoverEvals`). The CLI dynamically `import()`s each match — Bun runs the TypeScript directly, so there's no transpile step.
+
+If a file exports an `evals` array, every element is registered; otherwise the module's `default` or `evalDef` export is used.
+
+## Identity helper
+
+```ts
+import { defineEval } from '@hillz/core'
+```
+
+`defineEval` is `<T extends Eval>(e: T): T => e` — type checking only, no runtime work.
+
+## `Eval` schema
+
+```ts
+interface Eval {
+  name: string
+  skill: string
+  flow: EvalFlow
+  tools?: NoeticTool[]
+  tasks: Task[]
+  scorers: ScorerRef[]
+  workers?: number
+  trials?: number
+  passThreshold?: number
+  cacheKey?: (input: InputMessage | InputMessage[]) => string
+  flowVersion?: string
+}
+```
+
+| Field           | Required | Type                                              | Default | Description                                                                                       |
+| --------------- | -------- | ------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------- |
+| `name`          | yes      | `string`                                          | —       | Unique within the project. Surfaces in CLI filters and result paths.                              |
+| `skill`         | yes      | `string`                                          | —       | The `Skill.name` to run this eval against. Must match an existing skill.                          |
+| `flow`          | yes      | `EvalFlow` (see below)                            | —       | The noetic flow under test. Either a `Step` or a factory.                                          |
+| `tools`         | no       | `NoeticTool[]`                                    | `[]`    | Tools the agent may call. Forwarded to a `FlowFactory`'s `tools` arg.                              |
+| `tasks`         | yes      | `Task[]`                                          | —       | The input/expected pairs to run. Each is keyed by `Task.id`.                                       |
+| `scorers`       | yes      | `ScorerRef[]`                                     | —       | Eval-level scorers (applied to every task in addition to any task-level scorers).                  |
+| `workers`       | no       | `number`                                          | `1`     | Worker-pool concurrency for tasks within this eval.                                                |
+| `trials`        | no       | `number`                                          | `1`     | How many times to run each task (averaged for the final score).                                    |
+| `passThreshold` | no       | `number` in `[0, 1]`                              | `0.8`   | `meanScore >= passThreshold` decides `passed`.                                                     |
+| `cacheKey`      | no       | `(input) => string`                               | —       | Custom cache-key function. Overrides the default `SHA-256(flowVersion, canonicalized input)`.      |
+| `flowVersion`   | no       | `string`                                          | —       | Bump to invalidate cached traces when the flow changes. **Without this OR `cacheKey`, no caching occurs.** |
+
+### `EvalFlow`
+
+```ts
+type EvalFlow = Step<unknown, string, string> | FlowFactory
+
+type FlowFactory = (ctx: {
+  skill: Skill
+  task: Task
+  tools: NoeticTool[]
+}) => Step<unknown, string, string>
+```
+
+Two shapes:
+
+- **Static `Step`** — a noetic step the optimizer reuses for every task.
+- **Factory** — invoked per task; receives the loaded `Skill` (with `siblings`), the current `Task`, and the tool list. Use this when the flow's instructions depend on the skill body or the task.
+
+Most evals use the factory form so `skill.body` is wired into `instructions`. See the example below.
+
+### `Task` schema
+
+```ts
+interface Task {
+  id: string
+  displayName?: string
+  tags?: string[]
+  input: InputMessage | InputMessage[]
+  expect?: {
+    contains?: string[]
+    toolCalls?: string[]
+    schema?: z.ZodTypeAny
+  }
+  scorers?: ScorerRef[]
+  workspace?: WorkspaceSpec
+  timeoutMs?: number
+}
+```
+
+| Field         | Required | Type                                                                   | Description                                                                                                          |
+| ------------- | -------- | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `id`          | yes      | `string`                                                               | Stable identifier. Used in result filenames, minibatch sampling, and CLI filters.                                    |
+| `displayName` | no       | `string`                                                               | Human-readable label; falls back to `id`.                                                                            |
+| `tags`        | no       | `string[]`                                                             | Free-form labels for filtering.                                                                                       |
+| `input`       | yes      | `InputMessage \| InputMessage[]`                                       | Sent to the agent. `InputMessage` is `string \| { role: 'user' \| 'system'; content: string }`.                       |
+| `expect`      | no       | `{ contains?, toolCalls?, schema? }`                                   | Optional expectations. Consumed by built-in scorers (`content-similarity`, `tool-call-accuracy`, JSON-schema scorers). |
+| `scorers`     | no       | `ScorerRef[]`                                                          | Task-level scorers (run in parallel with eval-level scorers).                                                         |
+| `workspace`   | no       | `WorkspaceSpec` (`{ fixture?, allowShell?, maxFileBytes? }`)           | When set, the task gets a tempdir sandbox. **Disables caching for this task** (workspace state isn't part of the key). |
+| `timeoutMs`   | no       | `number`                                                               | Per-task hard timeout in milliseconds.                                                                                 |
+
+### `ScorerRef`
+
+```ts
+type ScorerRef = string | Scorer | { name: string; opts: Record<string, unknown> }
+```
+
+Three forms, resolved by `resolveScorerRefs` in `packages/core/src/runner.ts`:
+
+- **`string`** — registry lookup. Built-ins live in `@hillz/scorers` (`content-similarity`, `completeness`, `tone-consistency`, etc.); user scorers from `scorers/**/*.scorer.ts` are merged in.
+- **`Scorer`** — inline literal. Useful for one-off code.
+- **`{ name, opts }`** — factory lookup. Parameterised scorers like `keyword-coverage`, `tool-call-accuracy`, `file-exists`.
+
+A scorer that throws becomes `score: 0` rather than failing the run.
+
+## Caching
+
+The cache key is `SHA-256(flowVersion, canonicalized input)`. Implications:
+
+- Provide a non-empty `flowVersion` whenever you want caching. Otherwise every run re-invokes the agent.
+- Bump `flowVersion` to invalidate stale traces after meaningful flow changes.
+- Override with `cacheKey(input)` to key on something other than the input (e.g. a hash of `skill.body`).
+- Tasks with a `workspace` skip the cache entirely.
+
+`hillz check` warns about evals missing both `flowVersion` and `cacheKey`.
+
+## Minimal example
+
+```ts
+// evals/echo.eval.ts
+import { defineEval } from '@hillz/core'
+import { react } from '@hillz/agent'
+
+export default defineEval({
+  name: 'echo',
+  skill: 'echo',
+  flowVersion: '1',
+  flow: ({ skill }) =>
+    react({ model: 'openai/gpt-5-nano', instructions: skill.body, tools: [] }),
+  tasks: [{ id: 'hello', input: 'hello world' }],
+  scorers: ['content-similarity'],
+  passThreshold: 0.5,
+})
+```
+
+## Factory + parameterised-scorer example
+
+```ts
+// evals/roman-numerals.eval.ts
+import { defineEval } from '@hillz/core'
+import { react } from '@hillz/agent'
+
+export default defineEval({
+  name: 'roman-numerals',
+  skill: 'roman-numerals',
+  flowVersion: '1',
+  flow: ({ skill }) =>
+    react({ model: 'openai/gpt-5-nano', instructions: skill.body, tools: [] }),
+  tasks: [
+    {
+      id: 'forty-nine',
+      input: '49',
+      scorers: [{ name: 'keyword-coverage', opts: { keywords: ['XLIX'] } }],
+    },
+    {
+      id: 'twenty-twenty-four',
+      input: '2024',
+      scorers: [{ name: 'keyword-coverage', opts: { keywords: ['MMXXIV'] } }],
+    },
+  ],
+  scorers: [],
+  passThreshold: 0.8,
+})
+```
+
+## Multiple evals per file
+
+Export an array under the name `evals`:
+
+```ts
+import { defineEval } from '@hillz/core'
+
+export const evals = [
+  defineEval({ name: 'echo-short', /* ... */ }),
+  defineEval({ name: 'echo-long', /* ... */ }),
+]
+```

@@ -1,0 +1,47 @@
+---
+title: GEPA
+description: Reflective prompt evolution on a Pareto frontier.
+---
+
+**GEPA** stands for **Genetic-Pareto reflective prompt evolution**. It's a prompt optimizer from Agrawal et al. ([arXiv:2507.19457](https://arxiv.org/abs/2507.19457), ICLR 2026 Oral). Hillz uses it as the engine for `hillz suggest`.
+
+## The core idea
+
+Most optimizers reduce a system to a single scalar reward, then chase it. GEPA does two things differently:
+
+1. **Reflect in natural language.** Instead of treating an execution as a black box, GEPA samples trajectories — the reasoning steps, tool calls, and final outputs — and asks the model to diagnose what went wrong in plain English. The diagnosis becomes the basis for the next candidate.
+2. **Keep a Pareto frontier.** GEPA does not collapse to one best prompt. It maintains a frontier of candidates that are non-dominated on `(cost, score)` — or any axes you care about. Improvements come from **combining complementary lessons** across the frontier, not from selecting a single winner.
+
+## Why this matters for skills
+
+Skills, by design, are accessed via progressive disclosure — `name` and `description` are loaded first, then the body when a task matches. GEPA can climb on any of these surfaces:
+
+- The `description` (sharpens which tasks the skill matches)
+- The body of `SKILL.md` (sharpens how the agent performs the task)
+- Individual bundled `references/` notes (sharpens specific subtasks)
+
+Hillz's `suggest` command exposes a `--target` flag for choosing which surface to climb on.
+
+## The loop (simplified)
+
+```text
+candidates ← { initial prompt }
+while budget remaining:
+  parent      ← sample from frontier (favoring under-explored axes)
+  trajectory  ← run eval set against parent
+  diagnosis   ← LLM reflects on failures in natural language
+  child       ← apply diagnosis as an edit to parent
+  if child is non-dominated on (cost, score):
+    candidates.add(child)
+    candidates.removeDominatedBy(child)
+end
+```
+
+## Reported numbers
+
+The paper reports GEPA beating GRPO by up to **20%** with **~35× fewer rollouts** on Qwen3 8B, and beating MIPROv2 by **+13%** aggregate. Hillz's `suggest` implementation is faithful to the published algorithm; the [`hillz compare`](/docs/cli/compare) command will show your own deltas.
+
+## Read the paper
+
+- [GEPA: Reflective Prompt Evolution Can Outperform Reinforcement Learning](https://arxiv.org/abs/2507.19457)
+- Reference implementation: [gepa-ai/gepa](https://github.com/gepa-ai/gepa)

@@ -1,0 +1,88 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+@source "../node_modules/fumadocs-ui/dist/**/*.js";
+
+@theme {
+  --font-sans:
+    "General Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
+  --font-mono:
+    var(--font-mono-loaded), "JetBrains Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo,
+    Consolas, monospace;
+
+  --color-rule: color-mix(in oklab, currentColor 14%, transparent);
+  --color-contour: color-mix(in oklab, currentColor 6%, transparent);
+
+  --tracking-wordmark: 0.04em;
+  --tracking-eyebrow: 0.18em;
+}
+
+:root {
+  --contour-opacity: 0.05;
+}
+
+.dark {
+  --contour-opacity: 0.07;
+}
+
+html,
+body {
+  background: var(--color-fd-background);
+  color: var(--color-fd-foreground);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--color-fd-foreground);
+  color: var(--color-fd-background);
+}
+
+/* Hillz wordmark — uppercase mono, tight tracking */
+.wordmark {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-wordmark);
+  font-weight: 500;
+}
+
+/* Eyebrow — `// label` */
+.eyebrow {
+  font-family: var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-eyebrow);
+  font-size: 0.6875rem;
+  color: var(--color-fd-muted-foreground);
+}
+
+/* Ruled section header */
+.rule-top {
+  border-top: 1px solid var(--color-fd-border);
+}
+
+/* Topographic motif — fixed faint background */
+.contour-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  opacity: var(--contour-opacity);
+  background-image: url("/contour.svg");
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: min(1600px, 130vw) auto;
+  mix-blend-mode: multiply;
+}
+
+.dark .contour-layer {
+  mix-blend-mode: screen;
+}
+
+/* No default rounded corners — sharp, refined */
+.btn-sharp {
+  border-radius: 0;
+}

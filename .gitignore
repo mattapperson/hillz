@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.DS_Store
+
+# hillz runtime artifacts
+**/hillz/results/
+**/hillz/cache/
+**/hillz/cache.db
+**/hillz/cache.db-*
+
+# env
+.env
+.env.local
+.vercel
+
+# Compiled CLI binaries — built per release by `bun run build:binaries`
+packages/hillz-linux-*/bin/hillz
+packages/hillz-darwin-*/bin/hillz
+packages/hillz-windows-*/bin/hillz.exe

@@ -1,0 +1,23 @@
+{
+  "name": "hillz-monorepo",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "bun --filter '@hillz/*' run build",
+    "build:binaries": "bun scripts/build-binaries.ts",
+    "typecheck": "bun --filter '@hillz/*' run typecheck",
+    "test": "bun --filter '@hillz/*' run test",
+    "lint": "bunx biome check .",
+    "lint:fix": "bunx biome check --fix .",
+    "format": "bunx biome format --write ."
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.0",
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  }
+}

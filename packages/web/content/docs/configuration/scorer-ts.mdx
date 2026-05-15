@@ -1,0 +1,193 @@
+---
+title: Scorer modules (*.scorer.ts)
+description: Full schema for the TypeScript modules that register custom scorers into the hillz registry.
+---
+
+A **scorer module** is a TypeScript file matching `scorers/**/*.scorer.ts` that exports one or more `Scorer` objects. The CLI merges every discovered scorer into the built-in registry; evals can then reference them by `name`.
+
+For how scorers fit into the run loop, see [Concepts → Evals and tasks](../concepts/evals-and-tasks#the-scorer-contract).
+
+## When to write a scorer module
+
+You only need a `*.scorer.ts` file when the built-in registry from `@hillz/scorers` (`content-similarity`, `completeness`, `tone-consistency`, `keyword-coverage`, `tool-call-accuracy`, etc.) doesn't cover what you want to measure. Inline scorers (returning a `Scorer` object directly from an eval) work too, but a separate module makes the scorer reusable across evals.
+
+## Discovery
+
+| Glob                          | Recognised exports                       |
+| ----------------------------- | ---------------------------------------- |
+| `scorers/**/*.scorer.ts`      | `default`, `scorer`, `scorers` (array)   |
+
+Implemented in `packages/core/src/discover.ts` (`discoverScorers`). Each discovered scorer is registered under its `name` in the loaded context; on collision the user scorer wins over the built-in.
+
+## Identity helper
+
+```ts
+import { defineScorer } from '@hillz/core'
+```
+
+`defineScorer` is `<T extends Scorer>(s: T): T => s`.
+
+## `Scorer` schema
+
+```ts
+interface Scorer {
+  name: string
+  kind: 'code' | 'llm'
+  run: (run: ScorerRun, deps: ScorerDeps) => Promise<ScoreResult>
+}
+```
+
+| Field   | Required | Type                                              | Description                                                                                                  |
+| ------- | -------- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `name`  | yes      | `string`                                          | Globally unique within the project. Evals reference scorers by this name (`scorers: ['my-scorer']`).         |
+| `kind`  | yes      | `'code' \| 'llm'`                                 | `'code'` runs without a judge. `'llm'` requires `deps.judge` — the runner throws if no judge is configured. |
+| `run`   | yes      | `(run: ScorerRun, deps: ScorerDeps) => Promise<ScoreResult>` | Returns the score (clamped to `[0, 1]`) plus optional reason and metadata.                       |
+
+### `ScorerRun`
+
+The argument passed into your scorer:
+
+```ts
+interface ScorerRun {
+  runId: string
+  input: InputMessage | InputMessage[]
+  output: string
+  trace: AgentTrace
+  additionalContext?: {
+    reference?: string
+    context?: string[]
+  }
+  workspace?: {
+    before: FileSnapshot
+    after: FileSnapshot
+    diff: WorkspaceDiff
+  }
+}
+```
+
+- `output` is the agent's final text.
+- `trace` includes `items`, `toolCalls`, `usage`, and `durationMs` — useful for behaviour scorers.
+- `workspace` is populated only when the task declared a `WorkspaceSpec`; use it for file-diff scorers.
+
+### `ScorerDeps`
+
+```ts
+interface ScorerDeps {
+  judge?: Judge
+}
+```
+
+Only `llm`-kind scorers receive a judge. The runner throws `Scorer '<name>' requires a Judge but none was provided` if you set `kind: 'llm'` but no judge is configured.
+
+### `ScoreResult`
+
+What your scorer returns:
+
+```ts
+interface ScoreResult {
+  scorer: string                     // typically your scorer's name
+  score: number                      // clamped to [0, 1] by createScorer
+  reason?: string                    // surfaced in CLI output and reflection rubrics
+  metadata?: Record<string, unknown> // free-form, persisted in RunResult JSON
+}
+```
+
+## The `createScorer` builder
+
+`@hillz/scorers` exports a small builder for assembling scorers as a pipeline. It clamps your score into `[0, 1]` and threads results between stages.
+
+```ts
+import type { Scorer } from '@hillz/core'
+import { createScorer } from '@hillz/scorers'
+
+export const exactMatch = (expected: string): Scorer =>
+  createScorer({ name: `exact-match:${expected}`, kind: 'code' })
+    .generateScore(({ run }) => (run.output.trim() === expected ? 1 : 0))
+    .generateReason(({ run, score }) =>
+      score === 1 ? null : `expected ${JSON.stringify(expected)}, got ${JSON.stringify(run.output)}`,
+    )
+    .build()
+```
+
+Stages, all optional except `generateScore`:
+
+| Stage             | Signature                                                                  | Purpose                                                |
+| ----------------- | -------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `preprocess`      | `({ run, deps }) => Promise<Record<string, unknown>>`                      | Side-effect-free derivation; result lives in `results.preprocess`. |
+| `analyze`         | `({ run, deps, results }) => Promise<Record<string, unknown>>`             | Second stage; can read `results.preprocess`.            |
+| `generateScore`   | `({ run, deps, results }) => Promise<number>` (required)                   | Returns the raw score; clamped to `[0, 1]` automatically. |
+| `generateReason`  | `({ run, deps, results, score }) => Promise<string \| null>`               | Optional human-readable reason.                          |
+
+## Parameterised scorers (factories)
+
+When users want to register a factory (`{ name, opts }` references in `ScorerRef`), they register a `ScorerFactory`:
+
+```ts
+type ScorerFactory = (opts: Record<string, unknown>) => Scorer
+```
+
+Factories aren't picked up by file discovery — they're typically published by `@hillz/scorers` and merged in via `builtInScorerFactories`. To add your own, populate `scorerFactories` on the `LoadedContext` programmatically (most users don't need to).
+
+## Minimal code-kind example
+
+```ts
+// scorers/single-token.scorer.ts
+import { defineScorer } from '@hillz/core'
+
+export default defineScorer({
+  name: 'single-token',
+  kind: 'code',
+  run: async ({ output }) => {
+    const tokens = output.trim().split(/\s+/)
+    return {
+      scorer: 'single-token',
+      score: tokens.length === 1 ? 1 : 0,
+      reason: tokens.length === 1 ? undefined : `expected 1 token, got ${tokens.length}`,
+    }
+  },
+})
+```
+
+Reference it from an eval:
+
+```ts
+defineEval({
+  name: 'roman-numerals',
+  scorers: ['single-token'],
+  // ...
+})
+```
+
+## LLM-kind example
+
+```ts
+// scorers/polite.scorer.ts
+import { defineScorer } from '@hillz/core'
+import { z } from 'zod'
+
+export default defineScorer({
+  name: 'polite',
+  kind: 'llm',
+  run: async ({ output }, { judge }) => {
+    if (!judge) throw new Error('polite scorer requires a judge')
+    const result = await judge.evaluate({
+      rubric: 'Rate the politeness of the assistant message from 0 to 1. Return JSON only.',
+      input: output,
+      schema: z.object({ score: z.number().min(0).max(1), reason: z.string() }),
+    })
+    return { scorer: 'polite', score: result.score, reason: result.reason }
+  },
+})
+```
+
+## Multiple scorers per file
+
+```ts
+// scorers/index.scorer.ts
+import { defineScorer } from '@hillz/core'
+
+export const scorers = [
+  defineScorer({ name: 'scorer-a', kind: 'code', run: async () => ({ scorer: 'scorer-a', score: 1 }) }),
+  defineScorer({ name: 'scorer-b', kind: 'code', run: async () => ({ scorer: 'scorer-b', score: 0 }) }),
+]
+```

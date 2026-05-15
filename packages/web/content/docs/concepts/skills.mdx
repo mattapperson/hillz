@@ -1,0 +1,81 @@
+---
+title: Skills
+description: The agentskills.io format and how Hillz discovers them.
+---
+
+A **skill** in Hillz is a folder that conforms to the [agentskills.io](https://agentskills.io) specification. The minimum is one file:
+
+```
+skills/greeter/
+  SKILL.md
+```
+
+`SKILL.md` is markdown with YAML-style frontmatter:
+
+```markdown
+---
+name: greeter
+description: Greets a user by name, preserving honorifics.
+---
+
+You are a polite greeter. When given a name, respond with a single
+sentence greeting. Preserve titles (Dr., Prof., etc.) verbatim.
+```
+
+The frontmatter requires at minimum a `name` and `description`. The body is freeform markdown — typically a prompt or instruction set the agent reads.
+
+## Progressive disclosure
+
+agentskills.io's signature pattern. Agents see only the `name` + `description` of every available skill at startup; the full `SKILL.md` body is loaded **only** when a task matches. Bundled resources (`scripts/`, `references/`, `assets/`) load on demand during execution.
+
+Hillz respects this. When an eval references a skill, only its metadata is loaded until the eval runs.
+
+## Bundled resources
+
+A skill folder can optionally include:
+
+```
+skills/greeter/
+  SKILL.md
+  scripts/         # executable code an agent may invoke
+  references/      # extra documentation the agent can consult
+  assets/          # templates, examples, fixtures
+```
+
+These are visible to the agent during a task but are not loaded into context unless used.
+
+## Auto-discovery
+
+Hillz scans the configured `skillsDir` (default: `./skills`) and indexes every folder containing a `SKILL.md`. Discovery is cached; subsequent runs are O(changed files).
+
+```ts
+// hillz.config.ts
+import { defineConfig } from '@hillz/core'
+
+export default defineConfig({
+  skillsDir: './skills',
+  evalsDir: './evals',
+})
+```
+
+## Referencing a skill from an eval
+
+By path:
+
+```ts
+defineEval({
+  skill: './skills/greeter',
+  // ...
+})
+```
+
+By imported module (recommended — type-safe):
+
+```ts
+import { greeterSkill } from '@/skills/greeter'
+
+defineEval({
+  skill: greeterSkill,
+  // ...
+})
+```

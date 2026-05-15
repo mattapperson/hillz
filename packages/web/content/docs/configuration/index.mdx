@@ -1,0 +1,29 @@
+---
+title: Configuration
+description: Every file type a hillz project authors — what it is, where it lives, and what schema it follows.
+---
+
+A hillz project is just a directory. The CLI auto-discovers four file types under the current working directory; this section is the authoritative reference for each one's shape.
+
+| File              | Path / glob                  | Purpose                                                                        | Schema                              |
+| ----------------- | ---------------------------- | ------------------------------------------------------------------------------ | ----------------------------------- |
+| `SKILL.md`        | `skills/**/SKILL.md`         | The agent prompt + frontmatter metadata, following the agentskills.io spec.    | [Skill files](./skill-md)           |
+| `hillz.config.ts` | `<root>/hillz.config.ts`     | Optional project-wide knobs (cache store, results directory, custom judge).    | [hillz.config.ts](./hillz-config)   |
+| `*.eval.ts`       | `evals/**/*.eval.ts`         | Eval definitions — tasks, scorers, flow under test.                            | [Eval modules](./eval-ts)           |
+| `*.scorer.ts`     | `scorers/**/*.scorer.ts`     | Custom scorers (additions to the built-in registry).                           | [Scorer modules](./scorer-ts)       |
+
+All four are discovered eagerly on every CLI invocation. Discovery is implemented in `packages/core/src/discover.ts` (skills, evals, scorers) and `packages/cli/src/loader.ts` (`hillz.config.ts`).
+
+## Conceptual vs. schema docs
+
+If you want to know **what** these files are for and how they fit together, read the [Concepts](../concepts/skills) section first. The Configuration pages here are reference-grade — they enumerate every field, its type, defaults, and recognised module-level exports.
+
+## Identity helpers
+
+`@hillz/core` exports five thin identity helpers so your modules get full type-checking without runtime overhead:
+
+```ts
+import { defineConfig, defineEval, defineScorer, defineSkill, defineTask } from '@hillz/core'
+```
+
+Each one is `<T extends ...>(x: T): T => x` — declarative, no validation, no transformation. Use them at the top level of the file you're authoring so TypeScript narrows against the canonical shape.

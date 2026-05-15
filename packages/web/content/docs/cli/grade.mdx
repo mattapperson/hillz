@@ -1,0 +1,37 @@
+---
+title: hillz grade
+description: Human-grade ambiguous outputs and feed labels back into the loop.
+---
+
+```bash
+hillz grade [flags]
+```
+
+Opens an interactive prompt for the most ambiguous cases in a run — outputs where the scorer's confidence is low. Your label is written back to a `grades.jsonl` file and weighted into subsequent climbs.
+
+## When you need it
+
+Automatic scorers fail open in the gray zone: anything from "almost right" to "technically correct but unhelpful." `hillz grade` is the escape hatch — a quick interactive loop that gets human signal into the system **without** turning evals into manual review.
+
+## Flags
+
+| Flag                | Default | Description                                                   |
+| ------------------- | ------- | ------------------------------------------------------------- |
+| `--run <id>`        | latest  | Which run to grade from.                                      |
+| `--top <n>`         | `20`    | Number of low-confidence cases to surface.                    |
+| `--sort <key>`      | `entropy` | `entropy`, `cost`, `name`.                                  |
+| `--rubric <path>`   | —       | A rubric file the prompt shows you before each case.          |
+
+## Output
+
+```
+./hillz/grades.jsonl
+```
+
+One JSON line per labeled case:
+
+```json
+{ "run": "run_xyz", "case": "greeter/handles-honorific#2", "label": 1, "note": "Dr. preserved correctly" }
+```
+
+Subsequent climbs read this file and use it as a tie-breaker on the Pareto frontier.

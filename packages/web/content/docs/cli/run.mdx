@@ -1,0 +1,40 @@
+---
+title: hillz run
+description: Discover evals from your project, execute them, score and report.
+---
+
+```bash
+hillz run [filter] [--model ...] [--reporter ...] [--concurrency N]
+```
+
+The default verb. Discovers every file matching `evalsDir/**/*.eval.ts`, executes each case against every configured model, scores results, and writes reports.
+
+## Common flags
+
+| Flag                  | Default       | Description                                                 |
+| --------------------- | ------------- | ----------------------------------------------------------- |
+| `--model <id>`        | from config   | Override the model list for this run (repeatable).          |
+| `--reporter <kind>`   | `console`     | One or more of `console`, `junit`, `json`, `markdown`.      |
+| `--filter <glob>`     | `*`           | Restrict by eval name or tag (e.g. `greeter/*`, `#smoke`).  |
+| `--concurrency <N>`   | `4`           | Parallel cases. Bound by model rate limits.                 |
+| `--bail`              | `false`       | Stop at first failed case.                                  |
+| `--cache <mode>`      | `read-write`  | One of `off`, `read`, `read-write`.                         |
+
+## Examples
+
+```bash
+# Run everything against the default model list
+hillz run
+
+# Only the greeter evals, only on Claude
+hillz run greeter/* --model anthropic/claude-3.5-sonnet
+
+# CI run: JUnit reporter, no cache, bail on first failure
+hillz run --reporter junit --cache off --bail
+```
+
+## Exit codes
+
+- `0` — all cases passed (score ≥ threshold).
+- `1` — one or more cases failed.
+- `2` — configuration or discovery error.
